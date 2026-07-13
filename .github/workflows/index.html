@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ofoq Studio - Mediabunny Official Pipeline</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
+        body, html {
+            width: 100%; height: 100%;
+            background-color: #050505; color: #f2f2f2;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        #render-viewport {
+            position: relative; width: 100vw; height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        canvas {
+            max-width: 90%; max-height: 90%;
+            aspect-ratio: 16 / 9; object-fit: contain;
+            box-shadow: 0 0 50px rgba(212, 175, 55, 0.15);
+            border-radius: 12px; border: 1px solid #1a1a1a;
+        }
+
+        #render-overlay {
+            position: absolute; top: 24px; right: 24px;
+            background: rgba(18, 18, 18, 0.95);
+            border: 1px solid #333;
+            padding: 12px 24px; border-radius: 999px;
+            display: flex; align-items: center; gap: 12px; z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .spinner {
+            width: 18px; height: 18px; flex-shrink: 0;
+            border: 2px solid #d4af37; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #status-text { font-size: 14px; color: #f3e5ab; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+    <div id="render-viewport">
+        <canvas id="xCanvas" width="1920" height="1080"></canvas>
+        <div id="render-overlay">
+            <div class="spinner" id="spinner"></div>
+            <span id="status-text">جاري بدء التشغيل...</span>
+        </div>
+    </div>
+
+    <script type="module">
+        // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
+        import { 
+            Output, 
+            Mp4OutputFormat, 
+            BufferTarget, 
+            CanvasSource, 
+            AudioBufferSource,
+            QUALITY_HIGH 
+        } from 'https://cdn.jsdelivr.net/npm/mediabunny/+esm';
+
+        const params = new URLSearchParams(window.location.search);
+        const CONFIG = {
+            surah: parseInt(params.get('surah')) || 6,
+            ayah: parseInt(params.get('ayah')) || 6,
+            reciter: params.get('reciter') || 'Alafasy_128kbps',
+            fps: parseInt(params.get('fps')) || 60,
+            width: parseInt(params.get('width')) || 1920,
+            height: parseInt(params.get('height')) || 1080,
+            filename: 'Ofoq-Mediabunny-Render.mp4'
+        };
+
+        const canvas = document.getElementById('xCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const statusText = document.getElementById('status-text');
+        const spinner = document.getElementById('spinner');
+
+        let verseText = "جاري التحميل...";
+        let surahName = "سورة الأنعام";
+        window.__ofoqStatus = 'pending';
+
+        // --- 1. جلب البيانات وتجاوز CORS ---
+        async function fetchWithCORSFallback(url, isJson = false) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Fetch failed");
+                return isJson ? await res.json() : await res.arrayBuffer();
+            } catch (e) {
+                const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                const proxyRes = await fetch(proxyUrl);
+                if (!proxyRes.ok) throw new Error("Proxy fetch failed");
+                return isJson ? await proxyRes.json() : await proxyRes.arrayBuffer();
+            }
+        }
+
+        // --- 2. جلب وتشفير الصوت والنص ---
+        async function fetchQuranAssets() {
+            statusText.innerText = "جاري جلب الآية والملف الصوتي...";
+            
+            const textUrl = `https://api.alquran.cloud/v1/ayah/${CONFIG.surah}:${CONFIG.ayah}/quran-uthmani`;
+            try {
+                const data = await fetchWithCORSFallback(textUrl, true);
+                if (data && data.data) {
+                    verseText = `﴿ ${data.data.text} ﴾`;
+                    surahName = `سورة ${data.data.surah.name.replace('سُورَةُ ', '')}`;
+                }
+            } catch (e) {
+                verseText = "﴿ أَلَمْ يَرَوْا كَمْ أَهْلَكْنَا مِن قَبْلِهِم مِّكْنَاهمْ ﴾";
+            }
+
+            const surahPad = String(CONFIG.surah).padStart(3, '0');
+            const ayahPad = String(CONFIG.ayah).padStart(3, '0');
+            const audioUrl = `https://everyayah.com/data/${CONFIG.reciter}/${surahPad}${ayahPad}.mp3`;
+
+            const audioArrayBuffer = await fetchWithCORSFallback(audioUrl, false);
+
+            // تحويل الـ ArrayBuffer إلى AudioBuffer مفكوك التشفير
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const decodedAudioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
+
+            return { decodedAudioBuffer };
+        }
+
+        // --- 3. رسم الإطارات ---
+        function drawFrame(progress) {
+            ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+
+            const bgGrad = ctx.createRadialGradient(960, 540, 0, 960, 540, 1000);
+            bgGrad.addColorStop(0, '#111827');
+            bgGrad.addColorStop(1, '#030712');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+
+            ctx.strokeStyle = '#d4af37';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(80, 80, CONFIG.width - 160, CONFIG.height - 160);
+
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 44px sans-serif';
+            ctx.fillStyle = '#d4af37';
+            ctx.fillText(surahName, 960, 220);
+
+            ctx.font = 'bold 58px serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(verseText, 960, 540);
+
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+            ctx.fillRect(200, 880, 1520, 6);
+            ctx.fillStyle = '#d4af37';
+            ctx.fillRect(200, 880, 1520 * progress, 6);
+        }
+
+        const yieldThread = () => new Promise(r => setTimeout(r, 0));
+
+        function arrayBufferToBase64(buffer){
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const chunkSize = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunkSize){
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            }
+            return btoa(binary);
+        }
+
+        // --- 4. تشغيل خط التجميع (Pipeline) ---
+        async function startPipeline() {
+            try {
+                if (window.location.protocol === 'file:') {
+                    throw new Error("تنبيه: يرجى فتح الملف عبر Live Server لكي تعمل الـ Modules بسلام.");
+                }
+
+                const { decodedAudioBuffer } = await fetchQuranAssets();
+                const duration = decodedAudioBuffer.duration;
+                const totalFrames = Math.ceil(duration * CONFIG.fps);
+
+                statusText.innerText = "جاري تحضير محرك Mediabunny...";
+
+                // إنشاء الـ Output النهائي
+                const output = new Output({
+                    format: new Mp4OutputFormat(),
+                    target: new BufferTarget()
+                });
+
+                // 1. مصدر الفيديو (CanvasSource)
+                const videoSource = new CanvasSource(canvas, {
+                    codec: 'avc',
+                    bitrate: QUALITY_HIGH
+                });
+                output.addVideoTrack(videoSource);
+
+                // 2. مصدر الصوت الرسمي (AudioBufferSource) بحسب توثيق Mediabunny
+                const audioSource = new AudioBufferSource({
+                    codec: 'aac',
+                    bitrate: QUALITY_HIGH
+                });
+                output.addAudioTrack(audioSource);
+
+                await output.start();
+
+                // إضافة الصوت إلى مصدر الصوت
+                await audioSource.add(decodedAudioBuffer);
+
+                statusText.innerText = `جاري رندر الفريمات (${totalFrames} فريم)...`;
+
+                // رندر إطارات الفيديو
+                for (let i = 0; i < totalFrames; i++) {
+                    const progress = i / totalFrames;
+                    const frameTimeSeconds = i / CONFIG.fps;
+
+                    drawFrame(progress);
+
+                    // إضافة الفريم عند الزمن المحدد
+                    await videoSource.add(frameTimeSeconds, 1 / CONFIG.fps);
+
+                    if (i % 20 === 0) {
+                        statusText.innerText = `رندر وتشفير: ${Math.round(progress * 100)}%`;
+                        await yieldThread();
+                    }
+                }
+
+                statusText.innerText = "جاري تجميع وحفظ الملف النهائي...";
+                await output.finalize();
+
+                // استخراج الملف وتنزيله
+                const finalBuffer = output.target.buffer;
+                const blob = new Blob([finalBuffer], { type: 'video/mp4' });
+                const downloadUrl = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = CONFIG.filename;
+                a.click();
+
+                // تخزين النتيجة على window عشان يقدر Playwright (أو أي أداة headless) يسحبها مباشرة
+                window.__ofoqFilename = CONFIG.filename;
+                window.__ofoqBase64 = arrayBufferToBase64(finalBuffer);
+                window.__ofoqStatus = 'done';
+
+                spinner.style.display = 'none';
+                statusText.innerText = "تم إنتاج الفيديو بنجاح بفضل الله! 🎉";
+
+            } catch (err) {
+                console.error("Mediabunny Error:", err);
+                window.__ofoqStatus = 'error';
+                window.__ofoqError = err.message;
+                spinner.style.display = 'none';
+                statusText.style.color = '#ef4444';
+                statusText.innerText = "خطأ: " + err.message;
+            }
+        }
+
+        window.addEventListener('load', () => setTimeout(startPipeline, 500));
+    </script>
+</body>
+  </html>
