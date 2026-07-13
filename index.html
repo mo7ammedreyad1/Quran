@@ -55,27 +55,35 @@
     </div>
 
     <script type="module">
-        // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
-        import { 
-            Output, 
-            Mp4OutputFormat, 
-            BufferTarget, 
-            CanvasSource, 
-            AudioBufferSource,
-            QUALITY_HIGH 
-        } from 'https://cdn.jsdelivr.net/npm/mediabunny/+esm';
+    // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
+    import { 
+        Output, 
+        Mp4OutputFormat, 
+        BufferTarget, 
+        CanvasSource, 
+        AudioBufferSource,
+        QUALITY_HIGH,
+        canEncodeAudio
+    } from 'https://cdn.jsdelivr.net/npm/mediabunny/+esm';
 
-        const params = new URLSearchParams(window.location.search);
-        const CONFIG = {
-            surah: parseInt(params.get('surah')) || 6,
-            ayah: parseInt(params.get('ayah')) || 6,
-            reciter: params.get('reciter') || 'Alafasy_128kbps',
-            fps: parseInt(params.get('fps')) || 60,
-            width: parseInt(params.get('width')) || 1920,
-            height: parseInt(params.get('height')) || 1080,
-            filename: 'Ofoq-Mediabunny-Render.mp4'
-        };
+    // بعض المتصفحات (خصوصًا Chrome على Linux) مفيهاش AAC encoder أصلي في WebCodecs.
+    // الحل الرسمي من Mediabunny: نسجّل محرك AAC بديل (WASM) لو الأصلي مش موجود.
+    import { registerAacEncoder } from 'https://cdn.jsdelivr.net/npm/@mediabunny/aac-encoder/+esm';
+    if (!(await canEncodeAudio('aac'))) {
+        registerAacEncoder();
+    }
 
+    const params = new URLSearchParams(window.location.search);
+    const CONFIG = {
+        surah: parseInt(params.get('surah')) || 6,
+        ayah: parseInt(params.get('ayah')) || 6,
+        reciter: params.get('reciter') || 'Alafasy_128kbps',
+        fps: parseInt(params.get('fps')) || 60,
+        width: parseInt(params.get('width')) || 1920,
+        height: parseInt(params.get('height')) || 1080,
+        filename: 'Ofoq-Mediabunny-Render.mp4'
+    };
+    
         const canvas = document.getElementById('xCanvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const statusText = document.getElementById('status-text');
