@@ -54,36 +54,46 @@
         </div>
     </div>
 
-    <script type="module">
-    // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
-    import { 
-        Output, 
-        Mp4OutputFormat, 
-        BufferTarget, 
-        CanvasSource, 
-        AudioBufferSource,
-        QUALITY_HIGH,
-        canEncodeAudio
-    } from 'https://cdn.jsdelivr.net/npm/mediabunny/+esm';
-
-    // بعض المتصفحات (خصوصًا Chrome على Linux) مفيهاش AAC encoder أصلي في WebCodecs.
-    // الحل الرسمي من Mediabunny: نسجّل محرك AAC بديل (WASM) لو الأصلي مش موجود.
-    import { registerAacEncoder } from 'https://cdn.jsdelivr.net/npm/@mediabunny/aac-encoder/+esm';
-    if (!(await canEncodeAudio('aac'))) {
-        registerAacEncoder();
+    <script type="importmap">
+    {
+        "imports": {
+            "mediabunny": "https://esm.sh/mediabunny@1.50.8"
+        }
     }
+    </script>
 
-    const params = new URLSearchParams(window.location.search);
-    const CONFIG = {
-        surah: parseInt(params.get('surah')) || 6,
-        ayah: parseInt(params.get('ayah')) || 6,
-        reciter: params.get('reciter') || 'Alafasy_128kbps',
-        fps: parseInt(params.get('fps')) || 60,
-        width: parseInt(params.get('width')) || 1920,
-        height: parseInt(params.get('height')) || 1080,
-        filename: 'Ofoq-Mediabunny-Render.mp4'
-    };
-    
+    <script type="module">
+        // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
+        import { 
+            Output, 
+            Mp4OutputFormat, 
+            BufferTarget, 
+            CanvasSource, 
+            AudioBufferSource,
+            QUALITY_HIGH,
+            canEncodeAudio
+        } from 'mediabunny';
+
+        // بعض المتصفحات (خصوصًا Chrome على Linux) مفيهاش AAC encoder أصلي في WebCodecs.
+        // الحل الرسمي من Mediabunny: نسجّل محرك AAC بديل (WASM) لو الأصلي مش موجود.
+        // ?external=mediabunny بتجبر esm.sh إنه يستخدم نفس نسخة mediabunny المحمّلة فوق
+        // (عن طريق الـ importmap) بدل ما يحمّل نسخة تانية منفصلة وتحصل مشكلة "loaded twice".
+        import { registerAacEncoder } from 'https://esm.sh/@mediabunny/aac-encoder?external=mediabunny';
+        if (!(await canEncodeAudio('aac'))) {
+            registerAacEncoder();
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const CONFIG = {
+            surah: parseInt(params.get('surah')) || 6,
+            ayah: parseInt(params.get('ayah')) || 6,
+            reciter: params.get('reciter') || 'Alafasy_128kbps',
+            fps: parseInt(params.get('fps')) || 60,
+            width: parseInt(params.get('width')) || 1920,
+            height: parseInt(params.get('height')) || 1080,
+            filename: 'Ofoq-Mediabunny-Render.mp4'
+        };
+
         const canvas = document.getElementById('xCanvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const statusText = document.getElementById('status-text');
@@ -266,4 +276,4 @@
         window.addEventListener('load', () => setTimeout(startPipeline, 500));
     </script>
 </body>
-  </html>
+</html>
