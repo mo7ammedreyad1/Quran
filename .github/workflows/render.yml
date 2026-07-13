@@ -1,0 +1,75 @@
+name: Ofoq Render (Mediabunny)
+
+on:
+  workflow_dispatch:
+    inputs:
+      surah:
+        description: 'رقم السورة'
+        required: false
+        default: '6'
+      ayah:
+        description: 'رقم الآية'
+        required: false
+        default: '6'
+      reciter:
+        description: 'مجلد القارئ في everyayah.com'
+        required: false
+        default: 'Alafasy_128kbps'
+      fps:
+        description: 'عدد الفريمات في الثانية'
+        required: false
+        default: '60'
+      width:
+        description: 'العرض'
+        required: false
+        default: '1920'
+      height:
+        description: 'الارتفاع'
+        required: false
+        default: '1080'
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Chrome + Playwright deps
+        run: npx playwright install --with-deps chrome
+
+      - name: Render video
+        env:
+          OFOQ_SURAH: ${{ github.event.inputs.surah || '6' }}
+          OFOQ_AYAH: ${{ github.event.inputs.ayah || '6' }}
+          OFOQ_RECITER: ${{ github.event.inputs.reciter || 'Alafasy_128kbps' }}
+          OFOQ_FPS: ${{ github.event.inputs.fps || '60' }}
+          OFOQ_WIDTH: ${{ github.event.inputs.width || '1920' }}
+          OFOQ_HEIGHT: ${{ github.event.inputs.height || '1080' }}
+        run: npm run render
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofoq-render-output
+          path: output/*.mp4
+
+      - name: Create GitHub Release with the video
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: render-${{ github.run_number }}
+          name: "Ofoq Render #${{ github.run_number }} (سورة ${{ github.event.inputs.surah || '6' }} آية ${{ github.event.inputs.ayah || '6' }})"
+          files: output/*.mp4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
