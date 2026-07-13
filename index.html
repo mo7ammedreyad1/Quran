@@ -3,57 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ofoq Studio - Mediabunny Official Pipeline</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
-        body, html {
-            width: 100%; height: 100%;
-            background-color: #050505; color: #f2f2f2;
-            display: flex; align-items: center; justify-content: center;
-            overflow: hidden; font-family: system-ui, -apple-system, sans-serif;
-        }
+    <title>Bento Grid Minimalist Video - Ofoq Studio</title>
+    
+    <!-- خطوط IBM Plex Sans Arabic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- خطوط أيقونات Phosphor الرسمية بوزنين (Regular و Fill) -->
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
+    
+    <!-- مكتبة GSAP للتحكم الكامل في زمن حركة الإطارات -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
-        #render-viewport {
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #030303; color: #fff;
+            font-family: 'IBM Plex Sans Arabic', sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden;
+        }
+        #video-viewport {
             position: relative; width: 100vw; height: 100vh;
             display: flex; align-items: center; justify-content: center;
         }
-
         canvas {
-            max-width: 90%; max-height: 90%;
-            aspect-ratio: 16 / 9; object-fit: contain;
-            box-shadow: 0 0 50px rgba(212, 175, 55, 0.15);
-            border-radius: 12px; border: 1px solid #1a1a1a;
+            background: #060608;
+            box-shadow: 0 0 60px rgba(139, 92, 246, 0.15);
+            border-radius: 16px; border: 1px solid #1f1f23;
+            max-width: 90%; max-height: 90%; aspect-ratio: 16/9;
         }
-
-        #render-overlay {
+        #hud-overlay {
             position: absolute; top: 24px; right: 24px;
-            background: rgba(18, 18, 18, 0.95);
-            border: 1px solid #333;
-            padding: 12px 24px; border-radius: 999px;
-            display: flex; align-items: center; gap: 12px; z-index: 100;
-            backdrop-filter: blur(10px);
+            background: rgba(10, 10, 12, 0.9);
+            border: 1px solid #3b82f6; border-radius: 999px;
+            padding: 12px 24px; display: flex; align-items: center; gap: 12px;
+            font-size: 14px; font-weight: 600; color: #d1d5db;
+            backdrop-filter: blur(12px); z-index: 100;
         }
-
         .spinner {
-            width: 18px; height: 18px; flex-shrink: 0;
-            border: 2px solid #d4af37; border-top-color: transparent;
+            width: 18px; height: 18px;
+            border: 2px solid #3b82f6; border-top-color: transparent;
             border-radius: 50%; animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        #status-text { font-size: 14px; color: #f3e5ab; font-weight: 600; }
     </style>
 </head>
 <body>
 
-    <div id="render-viewport">
-        <canvas id="xCanvas" width="1920" height="1080"></canvas>
-        <div id="render-overlay">
+    <div id="video-viewport">
+        <!-- شاشة رندر الفيديو 1080p القياسية (1920x1080) -->
+        <canvas id="bentoCanvas" width="1920" height="1080"></canvas>
+        <div id="hud-overlay">
             <div class="spinner" id="spinner"></div>
-            <span id="status-text">جاري بدء التشغيل...</span>
+            <span id="status-text">جاري تهيئة الشبكة وبطاقات البينتو...</span>
         </div>
     </div>
 
+    <!-- استيراد Mediabunny للمتصفح -->
     <script type="importmap">
     {
         "imports": {
@@ -63,217 +72,448 @@
     </script>
 
     <script type="module">
-        // استيراد المكونات الصحيحة والرسمية فقط من Mediabunny
-        import { 
-            Output, 
-            Mp4OutputFormat, 
-            BufferTarget, 
-            CanvasSource, 
-            AudioBufferSource,
-            QUALITY_HIGH,
-            canEncodeAudio
-        } from 'mediabunny';
+        import { Output, Mp4OutputFormat, BufferTarget, CanvasSource, QUALITY_HIGH } from 'mediabunny';
 
-        // بعض المتصفحات (خصوصًا Chrome على Linux) مفيهاش AAC encoder أصلي في WebCodecs.
-        // الحل الرسمي من Mediabunny: نسجّل محرك AAC بديل (WASM) لو الأصلي مش موجود.
-        // ?external=mediabunny بتجبر esm.sh إنه يستخدم نفس نسخة mediabunny المحمّلة فوق
-        // (عن طريق الـ importmap) بدل ما يحمّل نسخة تانية منفصلة وتحصل مشكلة "loaded twice".
-        import { registerAacEncoder } from 'https://esm.sh/@mediabunny/aac-encoder?external=mediabunny';
-        if (!(await canEncodeAudio('aac'))) {
-            registerAacEncoder();
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const CONFIG = {
-            surah: parseInt(params.get('surah')) || 6,
-            ayah: parseInt(params.get('ayah')) || 6,
-            reciter: params.get('reciter') || 'Alafasy_128kbps',
-            fps: parseInt(params.get('fps')) || 60,
-            width: parseInt(params.get('width')) || 1920,
-            height: parseInt(params.get('height')) || 1080,
-            filename: 'Ofoq-Mediabunny-Render.mp4'
-        };
-
-        const canvas = document.getElementById('xCanvas');
+        const canvas = document.getElementById('bentoCanvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const statusText = document.getElementById('status-text');
-        const spinner = document.getElementById('spinner');
 
-        let verseText = "جاري التحميل...";
-        let surahName = "سورة الأنعام";
-        window.__ofoqStatus = 'pending';
+        const CONFIG = {
+            fps: 60,
+            duration: 10, // مدة مشهد الموشن جرافيك 10 ثواني كاملة
+            width: 1920,
+            height: 1080,
+            bg: '#050508'
+        };
 
-        // --- 1. جلب البيانات وتجاوز CORS ---
-        async function fetchWithCORSFallback(url, isJson = false) {
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("Fetch failed");
-                return isJson ? await res.json() : await res.arrayBuffer();
-            } catch (e) {
-                const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
-                const proxyRes = await fetch(proxyUrl);
-                if (!proxyRes.ok) throw new Error("Proxy fetch failed");
-                return isJson ? await proxyRes.json() : await proxyRes.arrayBuffer();
-            }
-        }
-
-        // --- 2. جلب وتشفير الصوت والنص ---
-        async function fetchQuranAssets() {
-            statusText.innerText = "جاري جلب الآية والملف الصوتي...";
-            
-            const textUrl = `https://api.alquran.cloud/v1/ayah/${CONFIG.surah}:${CONFIG.ayah}/quran-uthmani`;
-            try {
-                const data = await fetchWithCORSFallback(textUrl, true);
-                if (data && data.data) {
-                    verseText = `﴿ ${data.data.text} ﴾`;
-                    surahName = `سورة ${data.data.surah.name.replace('سُورَةُ ', '')}`;
+        // تعريف حالة نظام بطاقات البينتو (Bento Grid State)
+        const state = {
+            camera: { scale: 0.98, opacity: 1 },
+            cards: [
+                { // بطاقة 1: مراقبة الأداء (عمودية كبيرة على اليسار)
+                    x: 160, y: 180, w: 500, h: 720, scale: 0, opacity: 0, glow: 0,
+                    accent: '#10B981', title: 'مراقبة الأداء', icon: 'cpu', iconFont: 'Phosphor-Fill',
+                    metric: '0%', metricVal: 0, targetMetric: 94.2, graphProgress: 0
+                },
+                { // بطاقة 2: عوائد المبيعات (أعلى المنتصف)
+                    x: 690, y: 180, w: 540, h: 340, scale: 0, opacity: 0, glow: 0,
+                    accent: '#8B5CF6', title: 'مبيعات اليوم', icon: 'chart-line-up', iconFont: 'Phosphor',
+                    metric: '$0', metricVal: 0, targetMetric: 18420, barProgress: 0
+                },
+                { // بطاقة 3: إحصاءات المستخدمين (أسفل المنتصف)
+                    x: 690, y: 550, w: 540, h: 350, scale: 0, opacity: 0, glow: 0,
+                    accent: '#F59E0B', title: 'الزوار النشطين', icon: 'users', iconFont: 'Phosphor-Fill',
+                    metric: '0', metricVal: 0, targetMetric: 1420, userProgress: 0
+                },
+                { // بطاقة 4: التخزين السحابي وحالة الأمان (أعلى اليمين)
+                    x: 1260, y: 180, w: 500, h: 340, scale: 0, opacity: 0, glow: 0,
+                    accent: '#3B82F6', title: 'الخادم السحابي', icon: 'shield-check', iconFont: 'Phosphor-Fill',
+                    ringProgress: 0
+                },
+                { // بطاقة 5: الإشعارات والتنبيهات (أسفل اليمين)
+                    x: 1260, y: 550, w: 500, h: 350, scale: 0, opacity: 0, glow: 0,
+                    accent: '#EC4899', title: 'أحدث التنبيهات', icon: 'bell', iconFont: 'Phosphor',
+                    logProgress: 0
                 }
-            } catch (e) {
-                verseText = "﴿ أَلَمْ يَرَوْا كَمْ أَهْلَكْنَا مِن قَبْلِهِم مِّكْنَاهمْ ﴾";
-            }
+            ]
+        };
 
-            const surahPad = String(CONFIG.surah).padStart(3, '0');
-            const ayahPad = String(CONFIG.ayah).padStart(3, '0');
-            const audioUrl = `https://everyayah.com/data/${CONFIG.reciter}/${surahPad}${ayahPad}.mp3`;
-
-            const audioArrayBuffer = await fetchWithCORSFallback(audioUrl, false);
-
-            // تحويل الـ ArrayBuffer إلى AudioBuffer مفكوك التشفير
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const decodedAudioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
-
-            return { decodedAudioBuffer };
-        }
-
-        // --- 3. رسم الإطارات ---
-        function drawFrame(progress) {
+        // ==========================================
+        // خوارزمية رسم بطاقات البينتو والتفاعلات
+        // ==========================================
+        function drawBentoGrid() {
             ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
-
-            const bgGrad = ctx.createRadialGradient(960, 540, 0, 960, 540, 1000);
-            bgGrad.addColorStop(0, '#111827');
-            bgGrad.addColorStop(1, '#030712');
-            ctx.fillStyle = bgGrad;
+            
+            // خلفية داكنة فخمة متدرجة
+            const radialBg = ctx.createRadialGradient(CONFIG.width/2, CONFIG.height/2, 100, CONFIG.width/2, CONFIG.height/2, 1100);
+            radialBg.addColorStop(0, '#0a0a0f');
+            radialBg.addColorStop(1, '#020204');
+            ctx.fillStyle = radialBg;
             ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
 
-            ctx.strokeStyle = '#d4af37';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(80, 80, CONFIG.width - 160, CONFIG.height - 160);
+            // تطبيق تأثير الكاميرا الكلي
+            ctx.save();
+            ctx.translate(CONFIG.width / 2, CONFIG.height / 2);
+            ctx.scale(state.camera.scale, state.camera.scale);
+            ctx.translate(-CONFIG.width / 2, -CONFIG.height / 2);
+            ctx.globalAlpha = state.camera.opacity;
 
-            ctx.textAlign = 'center';
-            ctx.font = 'bold 44px sans-serif';
-            ctx.fillStyle = '#d4af37';
-            ctx.fillText(surahName, 960, 220);
+            state.cards.forEach((card, index) => {
+                if (card.opacity <= 0) return;
 
-            ctx.font = 'bold 58px serif';
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(verseText, 960, 540);
+                ctx.save();
+                // تحريك إحداثيات الرسم لتدعيم التكبير من منتصف كل بطاقة (Elastic Bounce)
+                const cx = card.x + card.w / 2;
+                const cy = card.y + card.h / 2;
+                ctx.translate(cx, cy);
+                ctx.scale(card.scale, card.scale);
+                ctx.translate(-cx, -cy);
+                ctx.globalAlpha = card.opacity;
 
-            ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
-            ctx.fillRect(200, 880, 1520, 6);
-            ctx.fillStyle = '#d4af37';
-            ctx.fillRect(200, 880, 1520 * progress, 6);
-        }
-
-        const yieldThread = () => new Promise(r => setTimeout(r, 0));
-
-        function arrayBufferToBase64(buffer){
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            const chunkSize = 0x8000;
-            for (let i = 0; i < bytes.length; i += chunkSize){
-                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-            }
-            return btoa(binary);
-        }
-
-        // --- 4. تشغيل خط التجميع (Pipeline) ---
-        async function startPipeline() {
-            try {
-                if (window.location.protocol === 'file:') {
-                    throw new Error("تنبيه: يرجى فتح الملف عبر Live Server لكي تعمل الـ Modules بسلام.");
+                // 1. رسم توهج النيون الخلفي الفخم (Neon Glow)
+                if (card.glow > 0) {
+                    ctx.shadowColor = card.accent;
+                    ctx.shadowBlur = card.glow;
                 }
 
-                const { decodedAudioBuffer } = await fetchQuranAssets();
-                const duration = decodedAudioBuffer.duration;
-                const totalFrames = Math.ceil(duration * CONFIG.fps);
+                // 2. جسم البطاقة الزجاجي (Minimalist Bento Card Body)
+                ctx.fillStyle = 'rgba(16, 16, 20, 0.75)';
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(card.x, card.y, card.w, card.h, 24);
+                ctx.fill();
+                ctx.stroke();
 
-                statusText.innerText = "جاري تحضير محرك Mediabunny...";
+                // تصفير تأثيرات الظل فوراً لحماية الأداء ومنع تشوه المحتويات الداخلية
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
 
-                // إنشاء الـ Output النهائي
+                // 3. كتابة العناوين ورسم الأيقونات (Phosphor Ligatures)
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '500 20px "IBM Plex Sans Arabic"';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(card.title, card.x + card.w - 30, card.y + 40);
+
+                // رسم أيقونة الفوسفور بسلاسة عبر ميزة الـ Ligature
+                ctx.font = `24px "${card.iconFont}"`;
+                ctx.fillStyle = card.accent;
+                ctx.textAlign = 'left';
+                ctx.fillText(card.icon, card.x + 30, card.y + 40);
+
+                // ==========================================
+                // تفاصيل محتويات كل بطاقة (Bento Widgets)
+                // ==========================================
+
+                if (index === 0) { // بطاقة مراقبة الأداء (مع رسم خط بياني متدفق)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '700 75px "IBM Plex Sans Arabic"';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(card.metric, card.x + card.w - 30, card.y + 140);
+
+                    // رسم شبكة رسم بيانية خافتة
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+                    ctx.lineWidth = 1;
+                    const chartX = card.x + 30;
+                    const chartY = card.y + 260;
+                    const chartW = card.w - 60;
+                    const chartH = 380;
+                    
+                    for(let i=0; i<=4; i++) {
+                        let yLine = chartY + (chartH/4) * i;
+                        ctx.beginPath(); ctx.moveTo(chartX, yLine); ctx.lineTo(chartX + chartW, yLine); ctx.stroke();
+                    }
+
+                    // خط البيانات والظلال الخاصة به
+                    const points = [15, 30, 10, 55, 40, 80, 65, 94.2];
+                    if (card.graphProgress > 0) {
+                        ctx.beginPath();
+                        ctx.strokeStyle = card.accent;
+                        ctx.lineWidth = 4;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+
+                        const maxPoints = Math.floor(card.graphProgress * points.length);
+                        for(let i=0; i<points.length; i++) {
+                            let px = chartX + (chartW / (points.length - 1)) * i;
+                            let py = (chartY + chartH) - (chartH * (points[i] / 100)) * card.graphProgress;
+                            if (i === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
+                        ctx.stroke();
+
+                        // رسم التدرج اللوني تحت الخط (Gradient Area Fill)
+                        const grad = ctx.createLinearGradient(0, chartY, 0, chartY + chartH);
+                        grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+                        grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+                        ctx.fillStyle = grad;
+                        ctx.lineTo(chartX + chartW, chartY + chartH);
+                        ctx.lineTo(chartX, chartY + chartH);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                } 
+                else if (index === 1) { // مبيعات اليوم مع شريط تقدم
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '700 60px "IBM Plex Sans Arabic"';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(card.metric, card.x + card.w - 30, card.y + 130);
+
+                    // شريط التقدم النيون
+                    const barX = card.x + 30;
+                    const barY = card.y + 220;
+                    const barW = card.w - 60;
+                    const barH = 14;
+
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                    ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 7); ctx.fill();
+
+                    if (card.barProgress > 0) {
+                        ctx.fillStyle = card.accent;
+                        ctx.beginPath(); 
+                        ctx.roundRect(barX, barY, barW * card.barProgress, barH, 7); 
+                        ctx.fill();
+                    }
+                    
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '500 16px "IBM Plex Sans Arabic"';
+                    ctx.fillText("معدل الهدف اليومي المحقق: ٨٥٪", card.x + card.w - 30, card.y + 270);
+                } 
+                else if (index === 2) { // الزوار النشطين مع صور رمزية
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '700 60px "IBM Plex Sans Arabic"';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(card.metric, card.x + card.w - 30, card.y + 140);
+
+                    // رسم دوائر المستخدمين مع تداخل جمالي (Staggered Avatars)
+                    const avY = card.y + 240;
+                    const avColors = ['#F59E0B', '#3B82F6', '#EC4899', '#10B981'];
+                    for(let i = 0; i < 4; i++) {
+                        let avX = card.x + card.w - 60 - (i * 45);
+                        let alpha = Math.min(1, card.userProgress * (1.2 - i*0.2));
+                        if(alpha <= 0) continue;
+
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.beginPath();
+                        ctx.arc(avX, avY, 28, 0, Math.PI * 2);
+                        ctx.fillStyle = avColors[i];
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = '#0a0a0f';
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                } 
+                else if (index === 3) { // الخادم السحابي مع حلقة أمان دائرية
+                    const ringX = card.x + 130;
+                    const ringY = card.y + 190;
+                    const radius = 70;
+
+                    // حلقة التقدم الخلفية
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+                    ctx.lineWidth = 14;
+                    ctx.beginPath(); ctx.arc(ringX, ringY, radius, 0, Math.PI * 2); ctx.stroke();
+
+                    // الحلقة الأمامية الديناميكية
+                    if (card.ringProgress > 0) {
+                        ctx.strokeStyle = card.accent;
+                        ctx.lineWidth = 14;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(ringX, ringY, radius, -Math.PI/2, -Math.PI/2 + (card.ringProgress * Math.PI * 2));
+                        ctx.stroke();
+                    }
+
+                    // رمز الأمان في منتصف الحلقة
+                    ctx.font = '36px "Phosphor-Fill"';
+                    ctx.fillStyle = card.accent;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('shield-check', ringX, ringY);
+
+                    // معلومات التخزين
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '600 24px "IBM Plex Sans Arabic"';
+                    ctx.fillText("محمي بالكامل", card.x + card.w - 30, card.y + 160);
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '500 16px "IBM Plex Sans Arabic"';
+                    ctx.fillText("مساحة مستخدمة: ٣٢٠ جيجا", card.x + card.w - 30, card.y + 200);
+                } 
+                else if (index === 4) { // أحدث التنبيهات (قائمة سجلات منسابة)
+                    const logs = [
+                        { time: '10:45', msg: 'تم تحديث خادم الحوسبة' },
+                        { time: '10:42', msg: 'مزامنة السحابية ناجحة' },
+                        { time: '10:35', msg: 'تسجيل دخول من جهاز جديد' }
+                    ];
+
+                    ctx.textAlign = 'right';
+                    logs.forEach((log, i) => {
+                        let logY = card.y + 120 + (i * 70);
+                        let itemAlpha = Math.min(1, Math.max(0, (card.logProgress - i * 0.25) * 4));
+                        
+                        ctx.save();
+                        ctx.globalAlpha = itemAlpha;
+                        
+                        // رصاصة التنبيه الدائرية (Bullet point)
+                        ctx.beginPath();
+                        ctx.arc(card.x + card.w - 35, logY + 2, 6, 0, Math.PI * 2);
+                        ctx.fillStyle = card.accent;
+                        ctx.fill();
+
+                        // الرسالة
+                        ctx.fillStyle = '#f1f5f9';
+                        ctx.font = '600 18px "IBM Plex Sans Arabic"';
+                        ctx.fillText(log.msg, card.x + card.w - 60, logY);
+
+                        // الوقت
+                        ctx.fillStyle = '#64748b';
+                        ctx.font = '500 14px "IBM Plex Sans Arabic"';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(log.time, card.x + 30, logY);
+                        
+                        ctx.restore();
+                    });
+                }
+
+                ctx.restore();
+            });
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // تايم لاين الحركة من GSAP
+        // ==========================================
+        function createBentoTimeline() {
+            const tl = gsap.timeline({ paused: true });
+
+            // زوم إن مستمر وفخم للكاميرا على مدار الفيديو بالكامل
+            tl.to(state.camera, { scale: 1.04, duration: CONFIG.duration, ease: "none" }, 0);
+
+            // ظهور البطاقات بالتتابع الهرمي (Staggered Intro)
+            state.cards.forEach((card, i) => {
+                const startTime = 0.5 + (i * 0.2);
+                
+                // ظهور الإطار والقسم الخارجي
+                tl.to(card, {
+                    scale: 1, opacity: 1, glow: 15,
+                    duration: 1.2, ease: "elastic.out(1, 0.75)"
+                }, startTime);
+
+                // بعد رندر بطاقة معينة، خفف توهجها تدريجياً ليبقى أنيقاً وبسيطاً (Minimalist)
+                tl.to(card, { glow: 4, duration: 1, ease: "power2.out" }, startTime + 1.2);
+            });
+
+            // تحريك البيانات الداخلية للبطاقات بعد ظهورها
+            // بطاقة 1: رسم الـ CPU والـ Graph
+            tl.to(state.cards[0], {
+                metricVal: state.cards[0].targetMetric,
+                graphProgress: 1,
+                duration: 4,
+                ease: "power2.out",
+                onUpdate: function() {
+                    state.cards[0].metric = state.cards[0].metricVal.toFixed(1) + "%";
+                }
+            }, 1.5);
+
+            // بطاقة 2: عوائد المبيعات التراكمية
+            tl.to(state.cards[1], {
+                metricVal: state.cards[1].targetMetric,
+                barProgress: 0.85,
+                duration: 3.5,
+                ease: "power3.out",
+                onUpdate: function() {
+                    state.cards[1].metric = "$" + Math.round(state.cards[1].metricVal).toLocaleString();
+                }
+            }, 1.8);
+
+            // بطاقة 3: تفاعل المستخدمين والـ Avatars
+            tl.to(state.cards[2], {
+                metricVal: state.cards[2].targetMetric,
+                userProgress: 1,
+                duration: 3,
+                ease: "power2.out",
+                onUpdate: function() {
+                    state.cards[2].metric = Math.round(state.cards[2].metricVal).toLocaleString();
+                }
+            }, 2.0);
+
+            // بطاقة 4: اكتمال الأمان و الـ Ring
+            tl.to(state.cards[3], {
+                ringProgress: 0.82,
+                duration: 2.5,
+                ease: "power2.inOut"
+            }, 2.2);
+
+            // بطاقة 5: ظهور التنبيهات بشكل منساب
+            tl.to(state.cards[4], {
+                logProgress: 1,
+                duration: 3,
+                ease: "power1.out"
+            }, 2.5);
+
+            // مشهد الخروج الدرامي (Zoom-out & Fade-out السينمائي في آخر ثانية ونصف)
+            const exitTime = CONFIG.duration - 1.5;
+            tl.to(state.camera, {
+                scale: 0.90,
+                opacity: 0,
+                duration: 1.5,
+                ease: "power3.inOut"
+            }, exitTime);
+
+            return tl;
+        }
+
+        // ==========================================
+        // خط رندر وتصدير الفيديو (Render Engine)
+        // ==========================================
+        async function runPipeline() {
+            try {
+                // الانتظار الإجباري للتأكد من تحميل الخطوط خطوة بخطوة لمنع ظهور نصوص افتراضية
+                await document.fonts.ready;
+                statusText.innerText = "جاري تجميع بطاقات البينتو...";
+
+                const tl = createBentoTimeline();
+
                 const output = new Output({
                     format: new Mp4OutputFormat(),
                     target: new BufferTarget()
                 });
 
-                // 1. مصدر الفيديو (CanvasSource)
                 const videoSource = new CanvasSource(canvas, {
                     codec: 'avc',
                     bitrate: QUALITY_HIGH
                 });
                 output.addVideoTrack(videoSource);
 
-                // 2. مصدر الصوت الرسمي (AudioBufferSource) بحسب توثيق Mediabunny
-                const audioSource = new AudioBufferSource({
-                    codec: 'aac',
-                    bitrate: QUALITY_HIGH
-                });
-                output.addAudioTrack(audioSource);
-
                 await output.start();
 
-                // إضافة الصوت إلى مصدر الصوت
-                await audioSource.add(decodedAudioBuffer);
+                const totalFrames = CONFIG.duration * CONFIG.fps;
 
-                statusText.innerText = `جاري رندر الفريمات (${totalFrames} فريم)...`;
-
-                // رندر إطارات الفيديو
                 for (let i = 0; i < totalFrames; i++) {
                     const progress = i / totalFrames;
-                    const frameTimeSeconds = i / CONFIG.fps;
+                    
+                    // تحديث الأنميشن الخاص بـ GSAP بدقة فريم بفريم
+                    tl.progress(progress);
 
-                    drawFrame(progress);
+                    // رندر الفريم الحالي على الـ Canvas
+                    drawBentoGrid();
 
-                    // إضافة الفريم عند الزمن المحدد
-                    await videoSource.add(frameTimeSeconds, 1 / CONFIG.fps);
+                    // إضافة الإطار المصدر للـ Video Track
+                    await videoSource.add(i / CONFIG.fps, 1 / CONFIG.fps);
 
                     if (i % 20 === 0) {
-                        statusText.innerText = `رندر وتشفير: ${Math.round(progress * 100)}%`;
-                        await yieldThread();
+                        statusText.innerText = `رندر الفيديو بدقة: ${Math.round(progress * 100)}%`;
+                        // تحرير دوري لمتصفح الويب لتجنب حدوث جمود
+                        await new Promise(r => setTimeout(r, 0));
                     }
                 }
 
-                statusText.innerText = "جاري تجميع وحفظ الملف النهائي...";
+                statusText.innerText = "جاري الحفظ واستخراج الفيديو...";
                 await output.finalize();
 
-                // استخراج الملف وتنزيله
-                const finalBuffer = output.target.buffer;
-                const blob = new Blob([finalBuffer], { type: 'video/mp4' });
+                const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
                 const downloadUrl = URL.createObjectURL(blob);
-
+                
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                a.download = CONFIG.filename;
+                a.download = 'Ofoq_Minimal_Bento_Grid.mp4';
                 a.click();
 
-                // تخزين النتيجة على window عشان يقدر Playwright (أو أي أداة headless) يسحبها مباشرة
-                window.__ofoqFilename = CONFIG.filename;
-                window.__ofoqBase64 = arrayBufferToBase64(finalBuffer);
-                window.__ofoqStatus = 'done';
-
-                spinner.style.display = 'none';
-                statusText.innerText = "تم إنتاج الفيديو بنجاح بفضل الله! 🎉";
+                document.getElementById('spinner').style.display = 'none';
+                statusText.innerText = "تم إنتاج وحفظ الفيديو بجودة 4K بفضل الله! 🎉";
 
             } catch (err) {
-                console.error("Mediabunny Error:", err);
-                window.__ofoqStatus = 'error';
-                window.__ofoqError = err.message;
-                spinner.style.display = 'none';
-                statusText.style.color = '#ef4444';
-                statusText.innerText = "خطأ: " + err.message;
+                console.error(err);
+                statusText.style.color = "#ef4444";
+                statusText.innerText = "حدث خطأ: " + err.message;
             }
         }
 
-        window.addEventListener('load', () => setTimeout(startPipeline, 500));
+        window.onload = () => setTimeout(runPipeline, 1000);
     </script>
 </body>
-</html>
+    </html>
